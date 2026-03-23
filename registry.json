@@ -1,0 +1,16 @@
+{
+    "materials": [
+        {
+            "source_filename": "attension.pdf",
+            "content_hash": "bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697",
+            "vector_db_path": "index\\bdfaa68d8984f0dc02beaca527b76f207d99b666d31d1da728ee0728182df697",
+            "upload_date": "2026-03-22 16:12:46"
+        },
+        {
+            "source_filename": "UNIT-3-3.pdf",
+            "content_hash": "7803dda0eda727fed35994e62bc1051b953bb66804426becded8dd0cb6c158f1",
+            "vector_db_path": "index\\7803dda0eda727fed35994e62bc1051b953bb66804426becded8dd0cb6c158f1",
+            "upload_date": "2026-03-22 16:39:55"
+        }
+    ]
+}

@@ -1,0 +1,40 @@
+# 🔐 Environment variables (CRITICAL)
+.env
+
+# 🧠 Python cache
+__pycache__/
+*.pyc
+
+# 🧪 Virtual environments (just in case)
+venv/
+.env/
+
+# 🗄️ Database files
+*.db
+
+# 🧾 JSON credentials (sensitive)
+credentials.json
+
+# 🖼️ Image outputs (generated / temp)
+*.jpg
+*.jpeg
+*.png
+
+# 🎯 Specific temp/generated files (extra safety)
+temp_*.png
+
+# 📊 Data / Index folders (ML / vector DB / embeddings)
+data/
+index/
+
+# ⚙️ VS Code settings (optional but usually ignored)
+.vscode/
+
+# 🏗️ Build / project-specific folders
+arc-era/
+
+# 🧹 Logs & misc
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
