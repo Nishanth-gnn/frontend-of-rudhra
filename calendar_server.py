@@ -1,114 +1,153 @@
-from mcp.server.fastmcp import FastMCP
-from pydantic import BaseModel, Field
-from typing import Dict
-import uuid
-import json
 import os
+import json
+import uuid
+import requests
+import subprocess
+from datetime import datetime, timedelta
+from typing import Dict, Optional
+from mcp.server.fastmcp import FastMCP
+from dotenv import load_dotenv
+
+# Load credentials
+load_dotenv()
 
 # Initialize the MCP Server
 mcp = FastMCP("LocalCalendar")
 
 # =====================================================
-# PERSISTENT DATABASE LOGIC
+# CONFIG & CREDENTIALS
 # =====================================================
-DB_FILE = "calendar_db.json"
+current_dir = os.path.dirname(os.path.abspath(__file__))
+DB_FILE = os.path.join(current_dir, "calendar_db.json")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+# =====================================================
+# GIT-OPS LOGIC (CLOUD PERSISTENCE)
+# =====================================================
+
+def git_sync_cloud():
+    """
+    Ensures the local calendar data is pushed to GitHub.
+    This is what makes the system work when your laptop is OFF.
+    """
+    try:
+        # Check if DB_FILE exists locally first
+        if not os.path.exists(DB_FILE):
+            return False
+
+        # Stage the file
+        subprocess.run(["git", "add", DB_FILE], check=True, capture_output=True)
+        
+        # Create commit message
+        commit_msg = f"Sync: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        
+        # Commit changes
+        subprocess.run(["git", "commit", "-m", commit_msg], check=True, capture_output=True)
+        
+        # Push to the 'main' branch
+        subprocess.run(["git", "push", "origin", "main"], check=True, capture_output=True)
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Git Error: {e.stderr.decode()}")
+        return False
+
+# =====================================================
+# DB UTILS (PRUNING & LOADING)
+# =====================================================
+
+def prune_db():
+    """Removes events older than 2 days to keep the file small."""
+    if not os.path.exists(DB_FILE): 
+        # Create empty DB if it doesn't exist
+        with open(DB_FILE, "w") as f:
+            json.dump({}, f)
+        return
+    
+    try:
+        with open(DB_FILE, "r") as f:
+            db = json.load(f)
+    except: return
+
+    now = datetime.now()
+    threshold = now - timedelta(days=2)
+    
+    pruned_db = {eid: info for eid, info in db.items() 
+                 if datetime.strptime(info['date'].split(' ')[0], "%Y-%m-%d") >= threshold}
+    
+    with open(DB_FILE, "w") as f:
+        json.dump(pruned_db, f, indent=4)
 
 def load_db() -> Dict[str, dict]:
-    """Loads the calendar database from a JSON file."""
+    prune_db()
     if os.path.exists(DB_FILE):
-        try:
-            with open(DB_FILE, "r") as f:
-                return json.load(f)
-        except json.JSONDecodeError:
-            return {}
+        with open(DB_FILE, "r") as f:
+            return json.load(f)
     return {}
 
-def save_db(data: Dict[str, dict]):
-    """Saves the calendar database to a JSON file."""
+def save_and_sync(db: Dict[str, dict]):
+    """Saves locally and triggers Git push."""
     with open(DB_FILE, "w") as f:
-        json.dump(data, f, indent=4)
+        json.dump(db, f, indent=4)
+    return git_sync_cloud()
 
 # =====================================================
-# CRUD OPERATIONS
+# FULL CRUD TOOLS
 # =====================================================
-
-# --- CREATE OPERATION ---
-class EventModel(BaseModel):
-    title: str = Field(description="The title or name of the event")
-    date: str = Field(description="The date/time of the event (e.g., '2026-03-15 10:00 AM')")
-    description: str = Field(default="", description="Optional details about the event")
 
 @mcp.tool()
-def add_event(event: EventModel) -> str:
-    """Creates a new event in the local calendar."""
+def add_event(title: str, date: str, time_str: str, description: str = "") -> str:
+    """CREATE: Adds a new event and pushes to GitHub for offline reminders."""
     db = load_db()
-    event_id = str(uuid.uuid4())[:8] # Generate a short unique ID
-    
+    event_id = str(uuid.uuid4())[:8]
     db[event_id] = {
-        "title": event.title,
-        "date": event.date,
-        "description": event.description
+        "title": title, 
+        "date": date, 
+        "time": time_str, 
+        "description": description, 
+        "notified": False
     }
-    
-    save_db(db)
-    return f"Success! Event '{event.title}' added for {event.date} with ID: {event_id}"
+    sync = save_and_sync(db)
+    status = "Synced to Cloud ☁️" if sync else "Local Only 💻 (Check Git Setup)"
+    return f"✅ Event '{title}' added. Status: {status}"
 
-# --- READ OPERATION ---
 @mcp.tool()
 def get_events() -> str:
-    """Retrieves all scheduled events from the local calendar."""
+    """READ: Returns all active events."""
     db = load_db()
-    if not db:
-        return "The calendar is currently empty."
-    
-    result = "Here are your scheduled events:\n"
-    for eid, details in db.items():
-        result += f"- ID: {eid} | Title: {details['title']} | Date: {details['date']} | Desc: {details['description']}\n"
-    return result
-
-# --- UPDATE OPERATION ---
-class UpdateEventModel(BaseModel):
-    event_id: str = Field(description="The unique ID of the event to update")
-    title: str | None = Field(default=None, description="New title (optional)")
-    date: str | None = Field(default=None, description="New date/time (optional)")
-    description: str | None = Field(default=None, description="New description (optional)")
+    if not db: return "Calendar is empty."
+    lines = [f"ID: {eid} | {info['date']} {info.get('time','')} | {info['title']}" for eid, info in db.items()]
+    return "📅 Current Schedule:\n" + "\n".join(lines)
 
 @mcp.tool()
-def update_event(update_data: UpdateEventModel) -> str:
-    """Updates an existing event in the calendar."""
+def update_event(event_id: str, title: str = None, date: str = None, time_str: str = None, description: str = None) -> str:
+    """UPDATE: Modifies an event and re-syncs to Cloud."""
     db = load_db()
-    if update_data.event_id not in db:
-        return f"Error: No event found with ID '{update_data.event_id}'."
+    if event_id not in db:
+        return f"❌ Error: ID {event_id} not found."
     
-    event = db[update_data.event_id]
+    if title: db[event_id]['title'] = title
+    if date: db[event_id]['date'] = date
+    if time_str: db[event_id]['time'] = time_str
+    if description: db[event_id]['description'] = description
     
-    # Only update the fields that the LLM provided
-    if update_data.title: 
-        event['title'] = update_data.title
-    if update_data.date: 
-        event['date'] = update_data.date
-    if update_data.description: 
-        event['description'] = update_data.description
-        
-    save_db(db)
-    return f"Success! Event ID '{update_data.event_id}' has been updated."
-
-# --- DELETE OPERATION ---
-class DeleteEventModel(BaseModel):
-    event_id: str = Field(description="The unique ID of the event to delete")
+    # Reset notified so the Worker checks the new time
+    db[event_id]['notified'] = False
+    
+    sync = save_and_sync(db)
+    return f"✅ Updated ID {event_id}. Cloud Sync: {'Success' if sync else 'Failed'}"
 
 @mcp.tool()
-def delete_event(delete_data: DeleteEventModel) -> str:
-    """Deletes an event from the calendar."""
+def delete_event(event_id: str) -> str:
+    """DELETE: Removes an event and updates the Cloud JSON."""
     db = load_db()
-    if delete_data.event_id in db:
-        del db[delete_data.event_id]
-        save_db(db)
-        return f"Success! Event ID '{delete_data.event_id}' has been deleted."
-    
-    return f"Error: No event found with ID '{delete_data.event_id}'."
-
+    if event_id in db:
+        title = db[event_id]['title']
+        del db[event_id]
+        sync = save_and_sync(db)
+        return f"🗑️ Deleted: {title}. Cloud Sync: {'Success' if sync else 'Failed'}"
+    return f"❌ Error: ID {event_id} not found."
 
 if __name__ == "__main__":
-    # This allows the server to run via standard input/output (stdio)
+    prune_db()
     mcp.run(transport='stdio')

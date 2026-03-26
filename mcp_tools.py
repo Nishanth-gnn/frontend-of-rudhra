@@ -117,6 +117,8 @@ def detect_repo_tech_stack(repo_name: str):
 # TOOL REGISTRY
 # =====================================================
 
+# These are the tools available when "PDF Mode" is OFF.
+# When PDF Mode is ON, the frontend will bypass these entirely.
 TOOLS = {
     "list_github_repos": list_github_repos,
     "count_github_repos": count_github_repos,

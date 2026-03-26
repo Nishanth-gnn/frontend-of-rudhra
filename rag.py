@@ -23,7 +23,7 @@ llm = ChatOpenAI(
     base_url="https://openrouter.ai/api/v1",
     model="gpt-3.5-turbo",
     temperature=0.1,
-    max_tokens=1000
+    max_tokens=1500 # Increased slightly for more descriptive explanations
 )
 
 # --------------------------------------------------
@@ -105,22 +105,19 @@ def ask_pdf(question: str) -> str:
     if not context.strip():
         return "Not found in the document."
 
+    # UPDATED: Descriptive & Organized Prompt
     prompt = f"""
-You are an academic assistant.
+You are an expert Educational Assistant. Your goal is to explain concepts from the provided document in a clear, organized, and helpful manner.
 
 TASK:
-Extract and present ALL information from the context
-that answers the question below.
+Answer the question using ONLY the context provided below.
 
 CRITICAL RULES:
-- DO NOT summarize
-- DO NOT shorten
-- DO NOT skip details
-- Include ALL paragraphs that explain the concept
-- Light rephrasing only for clarity
-- Use ONLY the given context
-- If the answer does not exist, say exactly:
-  "Not found in the document."
+- **Strict Grounding**: Use ONLY the provided context. Do NOT use outside knowledge.
+- **Simplification**: Explain complex concepts in simple, accessible language.
+- **Organization**: Structure your answer with Markdown headers (###), bold text for key terms, and bullet points for lists.
+- **Completeness**: Include all relevant details from the context, but present them as a descriptive explanation rather than just a verbatim copy.
+- **Negative Constraint**: If the answer is not contained within the context, say exactly: "Not found in the document."
 
 Context:
 {context}
@@ -128,7 +125,7 @@ Context:
 Question:
 {clean_question}
 
-Answer (full explanation from document):
+Answer (Descriptive, structured explanation):
 """
 
     response = llm.invoke(prompt)

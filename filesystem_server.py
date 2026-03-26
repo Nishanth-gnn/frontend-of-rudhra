@@ -7,51 +7,59 @@ from mcp.server.fastmcp import FastMCP
 mcp = FastMCP("filesystem")
 
 # --- MULTI-DIRECTORY CONFIGURATION ---
+# We use absolute paths for Sunita's system folders
+DESKTOP_ROOT = Path(r"C:\Users\Sunita\Desktop").resolve()
+DOCUMENTS_ROOT = Path(r"C:\Users\Sunita\Documents").resolve()
+PROJECT_ROOT = Path(".").resolve()
+
 ALLOWED_ROOTS = [
-    Path(r"C:\Users\Sunita\Desktop").resolve(),
-    Path(r"C:\Users\Sunita\Documents").resolve(),
-    Path(".").resolve(),
+    DESKTOP_ROOT,
+    DOCUMENTS_ROOT,
+    PROJECT_ROOT,
 ]
 
-# ✅ NEW: Generic alias map (clean + extendable)
+# ✅ FIXED: Explicit mapping for common aliases
 PATH_ALIASES = {
-    "desktop": Path(r"C:\Users\Sunita\Desktop").resolve(),
-    "documents": Path(r"C:\Users\Sunita\Documents").resolve(),
+    "desktop": DESKTOP_ROOT,
+    "documents": DOCUMENTS_ROOT,
 }
 
-def safe_path(path: str) -> str:
+def safe_path(path_str: str) -> str:
     """
-    Checks if the requested path is within any of the ALLOWED_ROOTS.
-    Supports both absolute paths and relative paths.
+    Resolves aliases like 'desktop' to absolute system paths and 
+    enforces security boundaries within ALLOWED_ROOTS.
     """
     try:
-        path = path.strip()
+        path_str = path_str.strip()
+        lower_path = path_str.lower().replace("/", "\\") # Standardize slashes for Windows
 
-        # ✅ NEW: alias resolution (generalized, not overfitted)
-        lower_path = path.lower()
-        for alias, root in PATH_ALIASES.items():
+        # 1. Alias Resolution (e.g., "desktop/rama.txt" -> "C:\Users\Sunita\Desktop\rama.txt")
+        target_path = None
+        for alias, root_path in PATH_ALIASES.items():
             if lower_path.startswith(alias):
-                suffix = path[len(alias):].lstrip("\\/")
-                path = str(root / suffix)
+                # Strip the alias prefix and any leading slashes
+                suffix = path_str[len(alias):].lstrip("\\/")
+                target_path = (root_path / suffix).resolve()
                 break
-
-        # 1. Resolve path
-        requested_path = Path(os.path.expanduser(path)).resolve()
         
-        # 2. Security check
+        # 2. If no alias found, treat as standard path
+        if target_path is None:
+            target_path = Path(os.path.expanduser(path_str)).resolve()
+
+        # 3. Security check: Is the resolved path inside an allowed root?
         is_allowed = any(
-            requested_path == root or root in requested_path.parents 
+            target_path == root or root in target_path.parents 
             for root in ALLOWED_ROOTS
         )
         
         if not is_allowed:
             allowed_str = ", ".join([str(r) for r in ALLOWED_ROOTS])
             raise PermissionError(
-                f"Access Denied: '{path}' is outside permitted zones. "
-                f"Allowed roots are: {allowed_str}"
+                f"Access Denied: '{path_str}' resolves to '{target_path}', "
+                f"which is outside permitted zones: {allowed_str}"
             )
             
-        return str(requested_path)
+        return str(target_path)
     
     except Exception as e:
         if isinstance(e, PermissionError):
@@ -62,17 +70,20 @@ def safe_path(path: str) -> str:
 
 @mcp.tool()
 def read_text_file(path: str) -> str:
+    """Reads a text file. Use 'desktop/filename.txt' for the Desktop."""
     with open(safe_path(path), "r", encoding="utf-8") as f:
         return f.read()
 
 @mcp.tool()
 def list_directory(path: str = ".") -> list:
+    """Lists directory contents. Defaults to current project folder."""
     p = safe_path(path)
     items = os.listdir(p)
     return [f"[DIR] {i}" if os.path.isdir(os.path.join(p, i)) else f"[FILE] {i}" for i in items]
 
 @mcp.tool()
 def directory_tree(path: str = ".") -> str:
+    """Returns a visual tree of the directory."""
     def build_tree(root, prefix=""):
         tree = []
         try:
@@ -94,14 +105,17 @@ def directory_tree(path: str = ".") -> str:
 
 @mcp.tool()
 def write_file(path: str, content: str) -> str:
+    """Writes content to a file. Example: path='desktop/rama.txt'"""
     full_path = safe_path(path)
+    # Ensure the parent directory exists
     os.makedirs(os.path.dirname(full_path), exist_ok=True)
     with open(full_path, "w", encoding="utf-8") as f:
         f.write(content)
-    return f"Successfully wrote to {path}"
+    return f"✅ Successfully wrote to: {full_path}"
 
 @mcp.tool()
 def edit_file(path: str, old_text: str, new_text: str) -> str:
+    """Replaces old_text with new_text in a file."""
     full_path = safe_path(path)
     with open(full_path, "r", encoding="utf-8") as f:
         content = f.read()
@@ -114,11 +128,13 @@ def edit_file(path: str, old_text: str, new_text: str) -> str:
 
 @mcp.tool()
 def create_directory(path: str) -> str:
+    """Creates a directory at the given path."""
     os.makedirs(safe_path(path), exist_ok=True)
     return f"Directory {path} created/verified."
 
 @mcp.tool()
 def move_file(source: str, destination: str) -> str:
+    """Moves a file from source to destination."""
     src = safe_path(source)
     dst = safe_path(destination)
     shutil.move(src, dst)
