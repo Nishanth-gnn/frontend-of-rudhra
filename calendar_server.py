@@ -57,26 +57,41 @@ def git_sync_cloud():
 # =====================================================
 
 def prune_db():
-    """Removes events older than 2 days to keep the file small."""
-    if not os.path.exists(DB_FILE): 
+    """PERMANENTLY wipes events older than 2 days from today."""
+    if not os.path.exists(DB_FILE):
         # Create empty DB if it doesn't exist
         with open(DB_FILE, "w") as f:
             json.dump({}, f)
         return
-    
+
     try:
         with open(DB_FILE, "r") as f:
             db = json.load(f)
-    except: return
+    except (json.JSONDecodeError, IOError):
+        return
 
     now = datetime.now()
     threshold = now - timedelta(days=2)
     
-    pruned_db = {eid: info for eid, info in db.items() 
-                 if datetime.strptime(info['date'].split(' ')[0], "%Y-%m-%d") >= threshold}
+    initial_count = len(db)
+    pruned_db = {}
     
-    with open(DB_FILE, "w") as f:
-        json.dump(pruned_db, f, indent=4)
+    for eid, info in db.items():
+        try:
+            # FIX: Handle '2026-03-26T09:00:00' by splitting at 'T' or ' ' 
+            raw_date = info['date'].replace('T', ' ').split(' ')[0]
+            event_date = datetime.strptime(raw_date, "%Y-%m-%d")
+            
+            if event_date >= threshold:
+                pruned_db[eid] = info
+        except (ValueError, TypeError, KeyError) as e:
+            # If date is weird, keep it rather than crashing
+            print(f"⚠️ Skipping weird date format for {eid}: {e}")
+            pruned_db[eid] = info
+            
+    if len(pruned_db) < initial_count:
+        with open(DB_FILE, "w") as f:
+            json.dump(pruned_db, f, indent=4)
 
 def load_db() -> Dict[str, dict]:
     prune_db()

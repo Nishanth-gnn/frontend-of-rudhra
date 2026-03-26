@@ -26,5 +26,12 @@
         "date": "2026-03-26",
         "time": "20:20",
         "description": ""
+    },
+    "5fa7424d": {
+        "title": "test-night",
+        "date": "2026-03-26",
+        "time": "21:52",
+        "description": "",
+        "notified": false
     }
 }
