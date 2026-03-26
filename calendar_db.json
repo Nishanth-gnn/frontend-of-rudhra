@@ -56,7 +56,7 @@
         "date": "2026-03-26",
         "time": "21:57",
         "description": "",
-        "notified": false
+        "notified": true
     },
     "7c20cc50": {
         "title": "test-tel-3",
