@@ -27,7 +27,8 @@
         "title": "test-rudhra-2",
         "date": "2026-03-26",
         "time": "20:20",
-        "description": ""
+        "description": "",
+        "notified": true
     },
     "5fa7424d": {
         "title": "test-night",
